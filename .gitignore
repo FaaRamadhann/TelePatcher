@@ -1,0 +1,9 @@
+Telegram.apk
+Decompile/
+dist/
+*.apk
+!Telegram.apk
+__pycache__/
+*.pyc
+telepatch.keystore
+aligned.apk
