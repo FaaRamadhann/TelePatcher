@@ -56,6 +56,31 @@ def find_apktool():
     return None
 
 
+def run_apktool_live(args):
+    """Run apktool streaming output live (for long ops like decompile/build)."""
+    apktool = find_apktool()
+    if apktool is None:
+        return None
+    import time
+    start = time.time()
+    if apktool.endswith(".jar"):
+        cmd = ["java", "-jar", apktool] + args
+        shell = False
+    elif is_windows():
+        cmd = [apktool] + args
+        shell = True
+    else:
+        cmd = [apktool] + args
+        shell = False
+    print(f"$ {' '.join(cmd)}")
+    try:
+        result = subprocess.run(cmd, shell=shell, cwd=BASE_DIR)
+        print(f"(done in {time.time() - start:.0f}s, exit={result.returncode})")
+        return result
+    except FileNotFoundError:
+        return None
+
+
 def run_apktool(args):
     """Run apktool cross-platform. Returns CompletedProcess."""
     apktool = find_apktool()
@@ -154,8 +179,8 @@ def decompile_apk():
         return False
     if os.path.exists(DECOMPILE_DIR):
         shutil.rmtree(DECOMPILE_DIR)
-    print("Decompiling...")
-    result = run_apktool(["d", "-r", apk, "-o", DECOMPILE_DIR])
+    print("Decompiling (bisa 5-15 menit untuk APK Telegram, jangan di-close)...")
+    result = run_apktool_live(["d", "-r", apk, "-o", DECOMPILE_DIR])
     if result is None:
         print("FAIL apktool executable not found.")
         return False
@@ -316,12 +341,13 @@ def build_apk():
     if find_apktool() is None:
         print("FAIL apktool not found, cannot rebuild.")
         return False
-    result = run_apktool(["b", "Decompile", "-r"])
+    print("Rebuilding (bisa beberapa menit)...")
+    result = run_apktool_live(["b", "Decompile", "-r"])
     if result is None:
         print("FAIL apktool executable not found.")
         return False
     if result.returncode != 0:
-        print("FAIL build:", result.stderr or result.stdout)
+        print(f"FAIL build (exit={result.returncode}).")
         return False
     print("OK APK rebuilt.")
     built = os.path.join(DECOMPILE_DIR, "dist", "Telegram.apk")
