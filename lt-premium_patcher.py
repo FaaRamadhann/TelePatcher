@@ -70,23 +70,32 @@ def find_sdk_tool(name):
     return cands[0] if cands else None
 
 
+def pkg_manager():
+    """Return 'pkg' (Termux native) or 'apt' (chroot/Linux), else None."""
+    if shutil.which("pkg"):
+        return "pkg"
+    if shutil.which("apt"):
+        return "apt"
+    return None
+
+
 def install_deps():
     """Coba install dependensi otomatis (butuh pkg/apt + root di Linux)."""
-    pkgs = ["apktool", "openjdk-17", "apksigner"]
-    if is_termux():
+    pm = pkg_manager()
+    if pm == "pkg":
+        pkgs = ["python", "apktool", "openjdk-17", "apksigner"]
         print("$ pkg install -y " + " ".join(pkgs))
         return subprocess.run(
             ["pkg", "install", "-y"] + pkgs).returncode == 0
-    apt = shutil.which("apt")
-    if apt:
-        print("$ sudo apt install -y " + " ".join(
-            ["python3", "apktool", "openjdk-17-jre", "apksigner"]))
-        r1 = subprocess.run(["sudo", "apt", "update"])
+    if pm == "apt":
+        pkgs = ["python3", "apktool", "apksigner"]
+        print("$ sudo apt install -y " + " ".join(pkgs))
+        pre = [] if os.geteuid() == 0 else ["sudo"]
+        r1 = subprocess.run(pre + ["apt", "update"])
         if r1.returncode != 0:
             return False
         return subprocess.run(
-            ["sudo", "apt", "install", "-y", "python3", "apktool",
-             "openjdk-17-jre", "apksigner"]).returncode == 0
+            pre + ["apt", "install", "-y"] + pkgs).returncode == 0
     print("FAIL: tidak ada pkg/apt. Install manual, lihat docstring.")
     return False
 
@@ -106,11 +115,10 @@ def check_deps():
     print(f"[{'OK' if signer else 'FAIL'}] signer -> {signer or 'not found'}")
     ok &= bool(signer)
     if not ok:
-        if is_termux():
+        if pkg_manager() == "pkg":
             print("  Install: pkg install -y python apktool openjdk-17 apksigner")
         else:
-            print("  Install: sudo apt install -y python3 apktool "
-                  "openjdk-17-jre apksigner")
+            print("  Install: apt install -y python3 apktool apksigner")
     return ok
 
 
