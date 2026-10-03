@@ -69,6 +69,63 @@ def find_sdk_tool(name):
     return cands[0] if cands else None
 
 
+LOCK_FILE = os.path.join(BASE_DIR, ".telepatch.lock")
+
+
+def acquire_lock():
+    """Cegah dua instance jalan bareng (rebutan folder Decompile/)."""
+    if os.path.exists(LOCK_FILE):
+        try:
+            with open(LOCK_FILE) as f:
+                pid = f.read().strip()
+            print(f"FAIL proses lain sedang jalan (pid {pid}). Tunggu selesai dulu,")
+            print("     atau hapus .telepatch.lock bila yakin tidak ada proses lain.")
+        except Exception:
+            print("FAIL proses lain sedang jalan. Tunggu selesai dulu.")
+        return False
+    try:
+        with open(LOCK_FILE, "w") as f:
+            f.write(str(os.getpid()))
+        return True
+    except Exception as e:
+        print("FAIL tidak bisa bikin lock file:", e)
+        return False
+
+
+def release_lock():
+    try:
+        if os.path.exists(LOCK_FILE):
+            os.remove(LOCK_FILE)
+    except Exception:
+        pass
+
+
+def clean_dir(path, retries=5):
+    """rmtree yang tahan file-lock Windows (coba ulang + onerror)."""
+    import time
+    import stat
+
+    def onerror(func, p, _exc):
+        try:
+            os.chmod(p, stat.S_IWRITE)
+            func(p)
+        except Exception:
+            pass
+
+    for i in range(retries):
+        try:
+            if os.path.exists(path):
+                shutil.rmtree(path, onerror=onerror)
+            return True
+        except OSError:
+            if i == retries - 1:
+                print(f"FAIL tidak bisa hapus '{path}': dipakai proses lain?")
+                print("     Tutup proses TelePatcher lain lalu coba lagi.")
+                return False
+            time.sleep(2)
+    return False
+
+
 def find_apktool():
     """Find apktool. Handles Windows apktool.bat which needs shell=True."""
     path = shutil.which("apktool")
@@ -216,7 +273,8 @@ def decompile_apk():
         check_deps()
         return False
     if os.path.exists(DECOMPILE_DIR):
-        shutil.rmtree(DECOMPILE_DIR)
+        if not clean_dir(DECOMPILE_DIR):
+            return False
     print("Decompiling (bisa 5-15 menit untuk APK Telegram, jangan di-close)...")
     result = run_apktool_live(["d", "-r", apk, "-o", DECOMPILE_DIR])
     if result is None:
@@ -437,6 +495,15 @@ def main():
     args = p.parse_args()
 
     print(f"TelePatcher | {platform.system()} {platform.machine()} | Termux={is_termux()}")
+    if not acquire_lock():
+        return 1
+    try:
+        return _main(args)
+    finally:
+        release_lock()
+
+
+def _main(args):
     if args.check:
         return 0 if check_deps() else 1
     if not check_deps():
