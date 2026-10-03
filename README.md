@@ -25,15 +25,27 @@ java -version
 ```
 
 ## Cara Pakai
-1. Taruh `Telegram.apk` di folder ini (sejajar `premium_patcher.py`).
-2. Jalankan:
+### Windows → `premium_patcher.py`
+1. Taruh `Telegram.apk` di folder ini (sejajar script).
+2. `py premium_patcher.py`
+
+### Linux / Termux → `lt-premium_patcher.py`
+```bash
+# Termux
+pkg install -y python apktool openjdk-17 apksigner
+# atau otomatis:
+python3 lt-premium_patcher.py --install-deps
+
+# Debian/Ubuntu
+sudo apt install -y python3 apktool openjdk-17-jre apksigner
+
+# Cek + jalan
+python3 lt-premium_patcher.py --check
+cp /storage/emulated/0/Download/Telegram.apk .   # Termux (termux-setup-storage dulu)
+python3 lt-premium_patcher.py
+termux-open Telegram-Premium.apk                 # install hasil (Termux)
 ```
-# Windows
-py premium_patcher.py
-# Linux / Termux
-python3 premium_patcher.py
-```
-3. Hasil:
+3. Hasil (kedua script sama):
    - `unsigned_tg.apk` — hasil rebuild belum signed
    - `Telegram-Premium.apk` — hasil signed, siap install
    - `Decompile/` — hasil decompile + smali yang dipatch
