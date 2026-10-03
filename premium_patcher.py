@@ -275,8 +275,8 @@ def decompile_apk():
     if os.path.exists(DECOMPILE_DIR):
         if not clean_dir(DECOMPILE_DIR):
             return False
-    print("Decompiling (bisa 5-15 menit untuk APK Telegram, jangan di-close)...")
-    result = run_apktool_live(["d", "-r", apk, "-o", DECOMPILE_DIR])
+    print("Decompiling FULL (resource ikut di-decode, bisa 10-20 menit)...")
+    result = run_apktool_live(["d", apk, "-o", DECOMPILE_DIR])
     if result is None:
         print("FAIL apktool executable not found.")
         return False
@@ -369,6 +369,63 @@ def patch_premium_self(output_dir):
         return False
     except Exception as e:
         print("FAIL patch checkPremiumSelf:", e)
+        return False
+
+
+def patch_current_user_premium(output_dir):
+    """Set currentUser.premium=true di getCurrentUser().
+
+    Banyak UI (badge profil, isPremiumUser) baca field TLRPC$User.premium
+    langsung dari objek user, bukan via isPremium(). Paksa true tiap
+    getCurrentUser() dipanggil (null-safe, pakai register v2 baru).
+    """
+    target = None
+    for root, _dirs, files in os.walk(output_dir):
+        if "UserConfig.smali" in files:
+            p = os.path.join(root, "UserConfig.smali")
+            if "org/telegram/messenger/UserConfig.smali" in p.replace("\\", "/"):
+                target = p
+                break
+    if not target:
+        print("FAIL UserConfig.smali (messenger) not found.")
+        return False
+    try:
+        with open(target, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        method_sig = ".method public getCurrentUser()Lorg/telegram/tgnet/TLRPC$User;"
+        if method_sig not in text:
+            print("WARN getCurrentUser() tidak ketemu.")
+            return False
+        if "cond_premium_forced_telepatch" in text:
+            print("OK currentUser.premium patch sudah ada, lewati.")
+            return True
+        start = text.index(method_sig)
+        end = text.index(".end method", start)
+        body = text[start:end]
+        if ".locals 2" not in body:
+            print("WARN struktur getCurrentUser() beda dari harapan.")
+            return False
+        body = body.replace(".locals 2", ".locals 3", 1)
+        anchor = ("iget-object v1, p0, "
+                  "Lorg/telegram/messenger/UserConfig;->currentUser:"
+                  "Lorg/telegram/tgnet/TLRPC$User;")
+        if anchor not in body:
+            print("WARN anchor getCurrentUser() tidak ketemu.")
+            return False
+        inject = (anchor +
+                  "\n    if-eqz v1, :cond_premium_forced_telepatch"
+                  "\n    const/4 v2, 0x1"
+                  "\n    iput-boolean v2, v1, "
+                  "Lorg/telegram/tgnet/TLRPC$User;->premium:Z"
+                  "\n    :cond_premium_forced_telepatch")
+        body = body.replace(anchor, inject, 1)
+        text = text[:start] + body + text[end:]
+        with open(target, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        print("OK getCurrentUser() selalu laporkan premium=true.")
+        return True
+    except Exception as e:
+        print("FAIL patch currentUser.premium:", e)
         return False
 
 
@@ -572,6 +629,7 @@ def _main(args):
         print("WARN skipping SHA bypass value (still patches isPremium).")
     replace_ispremium_with_constant_true(DECOMPILE_DIR)
     patch_premium_self(DECOMPILE_DIR)
+    patch_current_user_premium(DECOMPILE_DIR)
     return 0 if build_apk() else 1
 
 

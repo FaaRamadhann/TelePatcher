@@ -172,11 +172,11 @@ def decompile_apk():
         return False
     if os.path.exists(DECOMPILE_DIR):
         shutil.rmtree(DECOMPILE_DIR)
-    print("Decompiling (bisa 5-15 menit, jangan di-close)...")
+    print("Decompiling FULL (resource ikut di-decode, bisa 10-20 menit)...")
     import time
     t0 = time.time()
     r = subprocess.run(
-        [apktool, "d", "-r", apk, "-o", DECOMPILE_DIR],
+        [apktool, "d", apk, "-o", DECOMPILE_DIR],
         cwd=BASE_DIR, env=apktool_env())
     print(f"(selesai {time.time() - t0:.0f}s, exit={r.returncode})")
     if r.returncode == 0:
