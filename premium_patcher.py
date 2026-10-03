@@ -89,25 +89,32 @@ def find_apktool():
     return None
 
 
-def run_apktool_live(args):
-    """Run apktool streaming output live (for long ops like decompile/build)."""
+def resolve_apktool_cmd(args):
+    """Prefer `java -jar apktool.jar`: avoids .bat `pause` and lost exit codes."""
     apktool = find_apktool()
     if apktool is None:
+        return None, False
+    if apktool.endswith(".jar"):
+        return ["java", "-jar", apktool] + args, False
+    sibling = os.path.join(os.path.dirname(apktool), "apktool.jar")
+    if os.path.exists(sibling):
+        return ["java", "-jar", sibling] + args, False
+    if is_windows():
+        return [apktool] + args, True
+    return [apktool] + args, False
+
+
+def run_apktool_live(args):
+    """Run apktool streaming output live (for long ops like decompile/build)."""
+    cmd_shell = resolve_apktool_cmd(args)
+    if cmd_shell[0] is None:
         return None
+    cmd, shell = cmd_shell
     import time
     start = time.time()
-    if apktool.endswith(".jar"):
-        cmd = ["java", "-jar", apktool] + args
-        shell = False
-    elif is_windows():
-        cmd = [apktool] + args
-        shell = True
-    else:
-        cmd = [apktool] + args
-        shell = False
     print(f"$ {' '.join(cmd)}")
     try:
-        # stdin=DEVNULL: apktool.BAT ends with `pause`; EOF lets it continue
+        # stdin=DEVNULL: .bat ends with `pause`; EOF lets it continue
         # instead of waiting for a keypress.
         result = subprocess.run(cmd, shell=shell, cwd=BASE_DIR,
                                 stdin=subprocess.DEVNULL)
@@ -119,19 +126,14 @@ def run_apktool_live(args):
 
 def run_apktool(args):
     """Run apktool cross-platform. Returns CompletedProcess."""
-    apktool = find_apktool()
-    if apktool is None:
+    cmd_shell = resolve_apktool_cmd(args)
+    if cmd_shell[0] is None:
         return None
-    if apktool.endswith(".jar"):
-        cmd = ["java", "-jar", apktool] + args
-        return subprocess.run(cmd, capture_output=True, text=True,
-                              encoding="utf-8", errors="replace")
-    if is_windows():
-        # .bat/.cmd cannot be exec'd directly without shell -> use cmd /c
-        cmd = [apktool] + args
+    cmd, shell = cmd_shell
+    if shell:
         return subprocess.run(cmd, capture_output=True, text=True,
                               encoding="utf-8", errors="replace", shell=True)
-    return subprocess.run([apktool] + args, capture_output=True, text=True,
+    return subprocess.run(cmd, capture_output=True, text=True,
                           encoding="utf-8", errors="replace")
 
 
