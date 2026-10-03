@@ -378,6 +378,18 @@ def run_signer(unsigned_apk):
     return False
 
 
+def apktool_supports_jobs(apktool_cmd):
+    """Apktool Debian (2.7.0) tidak punya -j/--jobs; apktool 3.x punya."""
+    try:
+        r = subprocess.run(apktool_cmd + ["b", "--help"],
+                           capture_output=True, text=True,
+                           encoding="utf-8", errors="replace")
+        out = (r.stdout or "") + (r.stderr or "")
+        return "--jobs" in out
+    except Exception:
+        return False
+
+
 def build_apk():
     if not os.path.isdir(DECOMPILE_DIR):
         print("FAIL 'Decompile/' not found, run decompile first.")
@@ -388,7 +400,12 @@ def build_apk():
     print("Rebuilding (bisa beberapa menit)...")
     # NOTE: `-r/--no-res` is a *decode* option only; `apktool b` rejects it.
     # `-j 1`: parallel smali jobs race on Windows (random NoSuchFileException).
-    result = run_apktool_live(["b", "Decompile", "-j", "1"])
+    # Only if supported (apktool 3.x; Debian's 2.7 lacks it).
+    build_cmd = ["b", "Decompile"]
+    probe_cmd, _ = resolve_apktool_cmd([])
+    if probe_cmd and probe_cmd[0] == "java" and apktool_supports_jobs(probe_cmd):
+        build_cmd += ["-j", "1"]
+    result = run_apktool_live(build_cmd)
     if result is None:
         print("FAIL apktool executable not found.")
         return False

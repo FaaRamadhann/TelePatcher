@@ -235,6 +235,24 @@ def patch_is_premium(output_dir):
     return found
 
 
+_jobs_supported = None
+
+
+def apktool_supports_jobs(apktool):
+    """Apktool Debian (2.7.0) tidak punya -j/--jobs; apktool 3.x punya."""
+    global _jobs_supported
+    if _jobs_supported is None:
+        try:
+            r = subprocess.run([apktool, "b", "--help"],
+                               capture_output=True, text=True,
+                               encoding="utf-8", errors="replace")
+            out = (r.stdout or "") + (r.stderr or "")
+            _jobs_supported = "--jobs" in out or "-j" in out
+        except Exception:
+            _jobs_supported = False
+    return _jobs_supported
+
+
 def run_signer(unsigned_apk):
     keystore = os.path.join(BASE_DIR, "telepatch.keystore")
     alias, storepass = "telepatch", "telepatch"
@@ -300,8 +318,11 @@ def build_apk():
     import time
     t0 = time.time()
     # -j 1: job smali paralel suka race (NoSuchFileException acak).
-    r = subprocess.run(
-        [apktool, "b", DECOMPILE_DIR, "-j", "1"], cwd=BASE_DIR)
+    # Hanya bila apktool mendukung (3.x; apktool Debian 2.7 tidak punya).
+    cmd = [apktool, "b", DECOMPILE_DIR]
+    if apktool_supports_jobs(apktool):
+        cmd += ["-j", "1"]
+    r = subprocess.run(cmd, cwd=BASE_DIR)
     print(f"(selesai {time.time() - t0:.0f}s, exit={r.returncode})")
     if r.returncode != 0:
         print("FAIL build gagal.")
