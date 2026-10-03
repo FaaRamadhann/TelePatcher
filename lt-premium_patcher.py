@@ -321,6 +321,46 @@ def run_signer(unsigned_apk):
     return False
 
 
+def patch_premium_self(output_dir):
+    """Force checkPremiumSelf lambdas to report premium=true (lihat premium_patcher.py)."""
+    target = None
+    for root, _d, files in os.walk(output_dir):
+        if "UserConfig.smali" in files:
+            p = os.path.join(root, "UserConfig.smali")
+            if "org/telegram/messenger/UserConfig.smali" in p:
+                target = p
+                break
+    if not target:
+        print("FAIL UserConfig.smali (messenger) tidak ketemu.")
+        return False
+    with open(target, "r", encoding="utf-8", errors="replace") as f:
+        lines = f.readlines()
+    patched = 0
+    out = []
+    cur = ""
+    for line in lines:
+        s = line.strip()
+        if s.startswith(".method"):
+            cur = s
+        elif s.startswith(".end method"):
+            cur = ""
+        if ("checkPremiumSelf" in cur
+                and s.startswith("iget-boolean p1, p1,")
+                and "TLRPC$User;->premium:Z" in s):
+            indent = line[:len(line) - len(line.lstrip())]
+            out.append(f"{indent}const/4 p1, 0x1\n")
+            patched += 1
+            continue
+        out.append(line)
+    if patched:
+        with open(target, "w", encoding="utf-8", newline="\n") as f:
+            f.writelines(out)
+        print(f"OK checkPremiumSelf dipaksa premium=true ({patched} lokasi).")
+        return True
+    print("WARN pola checkPremiumSelf tidak ketemu, mungkin versi beda.")
+    return False
+
+
 def build_apk():
     if not os.path.isdir(DECOMPILE_DIR):
         print("FAIL 'Decompile/' tidak ada, decode dulu.")
@@ -389,6 +429,7 @@ def main():
         return 1
     patch_smali(DECOMPILE_DIR, sha)
     patch_is_premium(DECOMPILE_DIR)
+    patch_premium_self(DECOMPILE_DIR)
     ok = build_apk()
     if ok and is_termux():
         print("Install di Termux: termux-open Telegram-Premium.apk")

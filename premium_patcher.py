@@ -323,6 +323,55 @@ def edit_smali_file(output_dir, sha256_value):
         return False
 
 
+def patch_premium_self(output_dir):
+    """Force checkPremiumSelf lambdas to report premium=true.
+
+    Server mengisi TLRPC$User.premium=false untuk akun gratis, lalu
+    UserConfig.checkPremiumSelf -> MessagesController.updatePremium(false)
+    me-reset state premium internal. Timpa pembacaan field dengan const true.
+    """
+    target = None
+    for root, _dirs, files in os.walk(output_dir):
+        if "UserConfig.smali" in files:
+            p = os.path.join(root, "UserConfig.smali")
+            if "org/telegram/messenger/UserConfig.smali" in p.replace("\\", "/"):
+                target = p
+                break
+    if not target:
+        print("FAIL UserConfig.smali (messenger) not found.")
+        return False
+    try:
+        with open(target, "r", encoding="utf-8", errors="replace") as f:
+            lines = f.readlines()
+        patched = 0
+        out = []
+        cur_method = ""
+        for line in lines:
+            s = line.strip()
+            if s.startswith(".method"):
+                cur_method = s
+            elif s.startswith(".end method"):
+                cur_method = ""
+            if ("checkPremiumSelf" in cur_method
+                    and s.startswith("iget-boolean p1, p1,")
+                    and "TLRPC$User;->premium:Z" in s):
+                indent = line[:len(line) - len(line.lstrip())]
+                out.append(f"{indent}const/4 p1, 0x1\n")
+                patched += 1
+                continue
+            out.append(line)
+        if patched:
+            with open(target, "w", encoding="utf-8", newline="\n") as f:
+                f.writelines(out)
+            print(f"OK checkPremiumSelf dipaksa premium=true ({patched} lokasi).")
+            return True
+        print("WARN pola checkPremiumSelf tidak ketemu, mungkin versi beda.")
+        return False
+    except Exception as e:
+        print("FAIL patch checkPremiumSelf:", e)
+        return False
+
+
 def replace_ispremium_with_constant_true(output_dir):
     target = None
     for root, _dirs, files in os.walk(output_dir):
@@ -522,6 +571,7 @@ def _main(args):
     else:
         print("WARN skipping SHA bypass value (still patches isPremium).")
     replace_ispremium_with_constant_true(DECOMPILE_DIR)
+    patch_premium_self(DECOMPILE_DIR)
     return 0 if build_apk() else 1
 
 
