@@ -1,8 +1,9 @@
+*.apk
+*.apks
+*.idsig
+*.tar.gz
 Telegram.apk
 Decompile/
-dist/
-*.apk
-!Telegram.apk
 __pycache__/
 *.pyc
 telepatch.keystore

@@ -429,6 +429,92 @@ def patch_current_user_premium(output_dir):
         return False
 
 
+def patch_is_premium_user_self(output_dir):
+    """isPremiumUser(user) true bila user adalah akun sendiri.
+
+    Objek User di cache MessagesController (bukan currentUser) field
+    premium-nya false dari server. Bandingkan user.id vs clientUserId;
+    cocok -> premium. Logika lama (premium && bukan support) dipertahankan.
+    """
+    target = None
+    for root, _dirs, files in os.walk(output_dir):
+        if "MessagesController.smali" in files:
+            p = os.path.join(root, "MessagesController.smali")
+            if "org/telegram/messenger/MessagesController.smali" in p.replace("\\", "/"):
+                target = p
+                break
+    if not target:
+        print("FAIL MessagesController.smali not found.")
+        return False
+    try:
+        with open(target, "r", encoding="utf-8", errors="replace") as f:
+            text = f.read()
+        sig = (".method public isPremiumUser"
+               "(Lorg/telegram/tgnet/TLRPC$User;)Z")
+        if sig not in text:
+            print("WARN isPremiumUser() tidak ketemu.")
+            return False
+        if "cond_self_premium_telepatch" in text:
+            print("OK isPremiumUser self-patch sudah ada, lewati.")
+            return True
+        start = text.index(sig)
+        end = text.index(".end method", start)
+        new_body = (
+            sig + "\n"
+            "    .locals 4\n"
+            "\n"
+            "    if-eqz p1, :cond_0\n"
+            "\n"
+            "    iget-boolean v0, p1, Lorg/telegram/tgnet/TLRPC$User;->premium:Z\n"
+            "\n"
+            "    if-eqz v0, :check_self_premium_telepatch\n"
+            "\n"
+            "    invoke-static {p1}, Lorg/telegram/messenger/MessagesController;->isSupportUser(Lorg/telegram/tgnet/TLRPC$User;)Z\n"
+            "\n"
+            "    move-result p1\n"
+            "\n"
+            "    if-nez p1, :cond_0\n"
+            "\n"
+            "    const/4 p1, 0x1\n"
+            "\n"
+            "    return p1\n"
+            "\n"
+            "    :check_self_premium_telepatch\n"
+            "    iget-wide v0, p1, Lorg/telegram/tgnet/TLRPC$User;->id:J\n"
+            "\n"
+            "    iget v2, p0, Lorg/telegram/messenger/BaseController;->currentAccount:I\n"
+            "\n"
+            "    invoke-static {v2}, Lorg/telegram/messenger/UserConfig;->getInstance(I)Lorg/telegram/messenger/UserConfig;\n"
+            "\n"
+            "    move-result-object v2\n"
+            "\n"
+            "    invoke-virtual {v2}, Lorg/telegram/messenger/UserConfig;->getClientUserId()J\n"
+            "\n"
+            "    move-result-wide v2\n"
+            "\n"
+            "    cmp-long v0, v0, v2\n"
+            "\n"
+            "    if-nez v0, :cond_0\n"
+            "\n"
+            "    const/4 p1, 0x1\n"
+            "\n"
+            "    return p1\n"
+            "\n"
+            "    :cond_0\n"
+            "    const/4 p1, 0x0\n"
+            "\n"
+            "    return p1\n"
+        )
+        text = text[:start] + new_body + text[end:]
+        with open(target, "w", encoding="utf-8", newline="\n") as f:
+            f.write(text)
+        print("OK isPremiumUser() true untuk akun sendiri.")
+        return True
+    except Exception as e:
+        print("FAIL patch isPremiumUser:", e)
+        return False
+
+
 def replace_ispremium_with_constant_true(output_dir):
     target = None
     for root, _dirs, files in os.walk(output_dir):
@@ -630,6 +716,7 @@ def _main(args):
     replace_ispremium_with_constant_true(DECOMPILE_DIR)
     patch_premium_self(DECOMPILE_DIR)
     patch_current_user_premium(DECOMPILE_DIR)
+    patch_is_premium_user_self(DECOMPILE_DIR)
     return 0 if build_apk() else 1
 
 
