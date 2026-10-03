@@ -387,7 +387,8 @@ def build_apk():
         return False
     print("Rebuilding (bisa beberapa menit)...")
     # NOTE: `-r/--no-res` is a *decode* option only; `apktool b` rejects it.
-    result = run_apktool_live(["b", "Decompile"])
+    # `-j 1`: parallel smali jobs race on Windows (random NoSuchFileException).
+    result = run_apktool_live(["b", "Decompile", "-j", "1"])
     if result is None:
         print("FAIL apktool executable not found.")
         return False
