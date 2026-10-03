@@ -79,6 +79,20 @@ def pkg_manager():
     return None
 
 
+def apktool_env():
+    """Env untuk apktool: tambah -Xmx bila belum ada (smali Telegram rakus heap).
+
+    Default -Xmx3g, override via TELEPATCH_XMX=4g. Menghormati _JAVA_OPTIONS
+    yang sudah ada (mis. -Djava.net.preferIPv4Stack=true di chroot).
+    """
+    env = os.environ.copy()
+    xmx = os.environ.get("TELEPATCH_XMX", "3g")
+    cur = env.get("_JAVA_OPTIONS", "")
+    if "-Xmx" not in cur:
+        env["_JAVA_OPTIONS"] = f"{cur} -Xmx{xmx}".strip()
+    return env
+
+
 def install_deps():
     """Coba install dependensi otomatis (butuh pkg/apt + root di Linux)."""
     pm = pkg_manager()
@@ -162,7 +176,8 @@ def decompile_apk():
     import time
     t0 = time.time()
     r = subprocess.run(
-        [apktool, "d", "-r", apk, "-o", DECOMPILE_DIR], cwd=BASE_DIR)
+        [apktool, "d", "-r", apk, "-o", DECOMPILE_DIR],
+        cwd=BASE_DIR, env=apktool_env())
     print(f"(selesai {time.time() - t0:.0f}s, exit={r.returncode})")
     if r.returncode == 0:
         print("OK APK decompiled -> 'Decompile/'")
@@ -322,7 +337,7 @@ def build_apk():
     cmd = [apktool, "b", DECOMPILE_DIR]
     if apktool_supports_jobs(apktool):
         cmd += ["-j", "1"]
-    r = subprocess.run(cmd, cwd=BASE_DIR)
+    r = subprocess.run(cmd, cwd=BASE_DIR, env=apktool_env())
     print(f"(selesai {time.time() - t0:.0f}s, exit={r.returncode})")
     if r.returncode != 0:
         print("FAIL build gagal.")
