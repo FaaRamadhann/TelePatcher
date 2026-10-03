@@ -74,7 +74,10 @@ def run_apktool_live(args):
         shell = False
     print(f"$ {' '.join(cmd)}")
     try:
-        result = subprocess.run(cmd, shell=shell, cwd=BASE_DIR)
+        # stdin=DEVNULL: apktool.BAT ends with `pause`; EOF lets it continue
+        # instead of waiting for a keypress.
+        result = subprocess.run(cmd, shell=shell, cwd=BASE_DIR,
+                                stdin=subprocess.DEVNULL)
         print(f"(done in {time.time() - start:.0f}s, exit={result.returncode})")
         return result
     except FileNotFoundError:
@@ -342,7 +345,8 @@ def build_apk():
         print("FAIL apktool not found, cannot rebuild.")
         return False
     print("Rebuilding (bisa beberapa menit)...")
-    result = run_apktool_live(["b", "Decompile", "-r"])
+    # NOTE: `-r/--no-res` is a *decode* option only; `apktool b` rejects it.
+    result = run_apktool_live(["b", "Decompile"])
     if result is None:
         print("FAIL apktool executable not found.")
         return False
