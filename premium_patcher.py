@@ -36,6 +36,39 @@ def is_linux():
     return platform.system().lower() == "linux"
 
 
+def find_sdk_tool(name):
+    """Find Android SDK build-tools binary: PATH first, then common SDK dirs.
+    (Pattern borrowed from ex-build.py: explicit SDK paths beat PATH.)"""
+    path = shutil.which(name)
+    if path:
+        return path
+    exe = name + ".exe" if is_windows() else name
+    bat = name + ".bat" if is_windows() else name
+    roots = []
+    for env in ("ANDROID_SDK_ROOT", "ANDROID_HOME", "ANDROID_SDK_HOME"):
+        if os.environ.get(env):
+            roots.append(os.environ[env])
+    roots += [
+        os.path.expandvars(r"%LOCALAPPDATA%\Android\Sdk"),
+        r"C:\AndroidSDK",
+        r"C:\Android\Sdk",
+        os.path.expanduser("~/Android/Sdk"),
+        "/opt/android-sdk",
+        "/usr/lib/android-sdk",
+    ]
+    cands = []
+    for r in roots:
+        bt = os.path.join(r, "build-tools")
+        if os.path.isdir(bt):
+            for ver in sorted(os.listdir(bt), reverse=True):
+                for fn in (bat, exe):
+                    p = os.path.join(bt, ver, fn)
+                    if os.path.exists(p):
+                        cands.append(p)
+    # versioned dirs sorted desc -> newest first
+    return cands[0] if cands else None
+
+
 def find_apktool():
     """Find apktool. Handles Windows apktool.bat which needs shell=True."""
     path = shutil.which("apktool")
@@ -270,6 +303,13 @@ def replace_ispremium_with_constant_true(output_dir):
         return False
 
 
+def run_cmd(cmd):
+    """Run a SDK tool command; shell=True on Windows for .bat wrappers."""
+    return subprocess.run(cmd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace",
+                          shell=is_windows())
+
+
 def run_signer(unsigned_apk):
     """Sign APK cross-platform: apksigner > jarsigner > legacy signer.sh."""
     keystore = os.path.join(BASE_DIR, "telepatch.keystore")
@@ -289,21 +329,20 @@ def run_signer(unsigned_apk):
         if r.returncode != 0:
             print("FAIL keystore creation:", r.stderr or r.stdout)
             return False
-    # zipalign if available
+    # zipalign if available (PATH or explicit SDK build-tools dir)
     aligned = unsigned_apk
-    zipalign = shutil.which("zipalign")
+    zipalign = find_sdk_tool("zipalign")
     if zipalign:
         aligned = os.path.join(BASE_DIR, "aligned.apk")
         subprocess.run([zipalign, "-p", "-f", "4", unsigned_apk, aligned],
                        capture_output=True)
     else:
         print("WARN zipalign not found, skipping alignment.")
-    apksigner = shutil.which("apksigner")
+    apksigner = find_sdk_tool("apksigner")
     if apksigner:
-        r = subprocess.run(
+        r = run_cmd(
             [apksigner, "sign", "--ks", keystore, "--ks-pass",
-             f"pass:{storepass}", "--out", SIGNED_APK, aligned],
-            capture_output=True, text=True, encoding="utf-8", errors="replace")
+             f"pass:{storepass}", "--out", SIGNED_APK, aligned])
         if r.returncode == 0:
             print(f"OK signed -> {SIGNED_APK}")
             return True
